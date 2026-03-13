@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analisis STS 2 </title>
+    <title>Dashboard Analisis Akademik - Live API</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -50,7 +50,7 @@
     <div class="max-w-7xl mx-auto">
         <header class="flex flex-col items-center justify-center mb-10 gap-4 text-center no-print">
             <h1 class="text-4xl md:text-5xl font-black mb-1 tracking-tight font-artistic text-transparent bg-clip-text bg-gradient-to-r from-blue-900 via-blue-600 to-indigo-800 pb-2 drop-shadow-sm">
-                Analisis Akademik nilai PTS 2<br> SMP ABBS Surakarta
+                Analisis Akademik nilai PTS 2 <br> SMP ABBS Surakarta 
             </h1>
             <p class="text-slate-500 font-medium text-xs md:text-sm uppercase tracking-widest bg-blue-50 px-5 py-2 rounded-full border border-blue-100 shadow-sm">
                 Laporan Statistik, Peringkat, EWS & Komparasi Rapor
@@ -285,12 +285,12 @@
                     </div>
 
                     <div class="mb-6 p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded-r-lg text-sm shadow-sm">
-                        <h4 class="font-bold text-indigo-900 mb-1 flex items-center gap-2">🤖 Catatan Akademik AI (Basis Nilai Asli)</h4>
+                        <h4 class="font-bold text-indigo-900 mb-1 flex items-center gap-2">🤖 Catatan Akademik AI (Berdasarkan Nilai Asli)</h4>
                         <p class="text-slate-700 leading-relaxed" id="st-auto-narrative">-</p>
                     </div>
                     
                     <div class="w-full mb-6">
-                        <h4 class="font-bold text-lg text-slate-800 mb-2">📄 Komparasi Nilai Asli vs Rata-rata</h4>
+                        <h4 class="font-bold text-lg text-slate-800 mb-2">📄 Komparasi Nilai Asli vs Rata-rata Murni</h4>
                         <div class="table-container shadow-sm border border-slate-200 rounded-lg overflow-hidden">
                             <table class="table-zebra w-full text-sm">
                                 <thead>
@@ -331,7 +331,7 @@
     </div>
 
     <script>
-        // --- API URL GOOGLE SHEETS ANDA ---
+        // --- API URL GOOGLE SHEETS ---
         const API_URL = "https://script.google.com/macros/s/AKfycbzkBM9u-qjQGdrvPEsGMAn-rlrdeRaIVGOdWIN1yqCRH60z4jDaCgC6B9UXbBAZsflHVg/exec";
 
         function formatNumber(num) {
@@ -383,7 +383,7 @@
             this.innerHTML = container.classList.contains('hidden') ? '👁️ Tampilkan Area Klasemen Peringkat' : '👁️ Sembunyikan Area Klasemen Peringkat';
         });
 
-        // FUNGSI TARIK DATA LIVE DARI API GOOGLE SHEETS
+        // FUNGSI TARIK DATA LIVE DARI API GOOGLE SHEETS DENGAN AUTO-NORMALIZER
         function loadDataFromGoogleSheets() {
             uploadArea.classList.add('hidden');
             loading.classList.remove('hidden'); 
@@ -399,17 +399,24 @@
                     if(json.status === "success") {
                         let jsonData = json.data;
 
-                        jsonData.forEach(row => {
-                            if (row.Nama && row.Nama.toString().trim() !== '' && row.Nama.toString().toLowerCase() !== 'jumlah') {
-                                let className = row.Kelas ? row.Kelas.toString().toUpperCase() : "Unknown";
+                        jsonData.forEach(rawRow => {
+                            // AUTO-NORMALIZER: Membersihkan judul kolom dari spasi liar & diseragamkan jadi UPPERCASE
+                            let row = {};
+                            for(let key in rawRow) {
+                                if(key) row[key.trim().toUpperCase()] = rawRow[key];
+                            }
+
+                            if (row["NAMA"] && row["NAMA"].toString().trim() !== '' && row["NAMA"].toString().toUpperCase() !== 'JUMLAH') {
+                                // Ekstrak kelas, beri fallback "UNKNOWN" jika tidak ada
+                                let className = row["KELAS"] ? row["KELAS"].toString().trim().toUpperCase() : "UNKNOWN";
                                 uniqueClasses.add(className);
                                 
                                 let student = { 
-                                    Nama: row.Nama, 
+                                    Nama: row["NAMA"], 
                                     Kelas: className, 
                                     RataRataAsli: 0, 
                                     RataRataAkhir: 0, 
-                                    Catatan: row['Student Notes'] || 'Tidak ada catatan.',
+                                    Catatan: row['STUDENT NOTES'] || row['CATATAN'] || 'Tidak ada catatan.',
                                     NilaiAsli: {}, 
                                     NilaiAkhir: {} 
                                 };
@@ -418,8 +425,13 @@
                                 let totalAkhir = 0, countAkhir = 0;
                                 
                                 mapelList.forEach(m => {
-                                    let nAsli = cleanNumber(row[`${m} NILAI ASLI`]);
-                                    let nAkhir = cleanNumber(row[`${m} NILAI AKHIR`]);
+                                    // Pemetaan yang kuat ke nama kolom Excel
+                                    let keyAsli = `${m} NILAI ASLI`;
+                                    let keyAkhir = `${m} NILAI AKHIR`;
+                                    
+                                    let nAsli = cleanNumber(row[keyAsli]);
+                                    let nAkhir = cleanNumber(row[keyAkhir]);
+                                    
                                     student.NilaiAsli[m] = nAsli;
                                     student.NilaiAkhir[m] = nAkhir;
                                     
@@ -438,13 +450,18 @@
                         
                         document.querySelectorAll('#filter-level option[data-class]').forEach(el => el.remove());
                         classArray.forEach(c => {
-                            let opt = document.createElement('option');
-                            opt.value = c; opt.innerText = `Kelas ${c}`; opt.setAttribute('data-class', 'true');
-                            filterSelect.appendChild(opt);
+                            // Abaikan baris Unknown jika ada
+                            if(c !== "UNKNOWN") {
+                                let opt = document.createElement('option');
+                                opt.value = c; opt.innerText = `Kelas ${c}`; opt.setAttribute('data-class', 'true');
+                                filterSelect.appendChild(opt);
+                            }
                         });
 
                         stClassDropdown.innerHTML = `<option value="" disabled selected>-- Pilih Kelas --</option>`;
-                        classArray.forEach(c => { stClassDropdown.innerHTML += `<option value="${c}">Kelas ${c}</option>`; });
+                        classArray.forEach(c => { 
+                            if(c !== "UNKNOWN") stClassDropdown.innerHTML += `<option value="${c}">Kelas ${c}</option>`; 
+                        });
 
                         loading.classList.add('hidden');
                         dashboard.classList.remove('hidden');
@@ -491,14 +508,14 @@
         }
 
         function updateDashboard(filterVal) {
-            currentFilteredData = allStudents;
+            currentFilteredData = allStudents.filter(s => s.Kelas !== "UNKNOWN"); // Sembunyikan data rusak dari dasbor
             let rankTitleText = "🏆 Peringkat Siswa (Global)";
-            let availableClasses = Array.from(uniqueClasses).sort();
+            let availableClasses = Array.from(uniqueClasses).filter(c => c !== "UNKNOWN").sort();
 
-            if (filterVal === 'L7') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('7')); availableClasses = availableClasses.filter(c => c.startsWith('7')); rankTitleText = "🏆 Peringkat Siswa (Level 7)"; }
-            else if (filterVal === 'L8') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('8')); availableClasses = availableClasses.filter(c => c.startsWith('8')); rankTitleText = "🏆 Peringkat Siswa (Level 8)"; }
-            else if (filterVal === 'L9') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('9')); availableClasses = availableClasses.filter(c => c.startsWith('9')); rankTitleText = "🏆 Peringkat Siswa (Level 9)"; }
-            else if (filterVal !== 'ALL') { currentFilteredData = allStudents.filter(s => s.Kelas === filterVal); availableClasses = [filterVal]; rankTitleText = `🏆 Peringkat Siswa (Kelas ${filterVal})`; }
+            if (filterVal === 'L7') { currentFilteredData = currentFilteredData.filter(s => s.Kelas.startsWith('7')); availableClasses = availableClasses.filter(c => c.startsWith('7')); rankTitleText = "🏆 Peringkat Siswa (Level 7)"; }
+            else if (filterVal === 'L8') { currentFilteredData = currentFilteredData.filter(s => s.Kelas.startsWith('8')); availableClasses = availableClasses.filter(c => c.startsWith('8')); rankTitleText = "🏆 Peringkat Siswa (Level 8)"; }
+            else if (filterVal === 'L9') { currentFilteredData = currentFilteredData.filter(s => s.Kelas.startsWith('9')); availableClasses = availableClasses.filter(c => c.startsWith('9')); rankTitleText = "🏆 Peringkat Siswa (Level 9)"; }
+            else if (filterVal !== 'ALL') { currentFilteredData = currentFilteredData.filter(s => s.Kelas === filterVal); availableClasses = [filterVal]; rankTitleText = `🏆 Peringkat Siswa (Kelas ${filterVal})`; }
 
             const statBody = document.getElementById('stat-body');
             const kkmBody = document.getElementById('ketuntasan-body');
@@ -548,7 +565,7 @@
                     ewsBody.innerHTML += `<tr><td class="font-bold text-slate-900">${s.Nama}</td><td class="text-center font-semibold text-slate-600 text-sm">${s.Kelas}</td><td class="text-center font-black text-red-600 text-base border-x border-red-100 bg-red-50/50">${remedSubjects.length}</td><td class="text-xs text-red-700 font-medium">${remedSubjects.join(', ')}</td></tr>`;
                 }
             });
-            if(ewsCount === 0) ewsBody.innerHTML = `<tr><td colspan="4" class="text-center font-bold text-emerald-600 py-4 text-sm">Alhamdulillah, tidak ada siswa dengan nilai sangat berisiko dalam filter ini.</td></tr>`;
+            if(ewsCount === 0) ewsBody.innerHTML = `<tr><td colspan="4" class="text-center font-bold text-emerald-600 py-4 text-sm">Alhamdulillah, tidak ada siswa yang berisiko (≥ 3 Mapel Remedial) dalam filter ini.</td></tr>`;
 
             // Heatmap
             availableClasses.forEach(c => {
@@ -705,7 +722,7 @@
             }
         });
 
-        // Trigger loading otomatis
+        // Tampilkan otomatis saat halaman dibuka
         window.onload = function() {
             loadDataFromGoogleSheets();
         };
