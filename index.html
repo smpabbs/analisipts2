@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Analisis STS 2 - Live API</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@400;500;600;700&display=swap');
+        
+        body { background-color: #f8fafc; font-family: 'Inter', system-ui, sans-serif; }
+        .font-artistic { font-family: 'Playfair Display', serif; }
+        
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 20px -5px rgba(0,0,0,0.05); padding: 28px; border: 1px solid #e2e8f0; margin-bottom: 28px; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem; }
+        th { position: sticky; top: 0; background-color: #f8fafc; font-weight: 600; color: #475569; padding: 12px 14px; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; z-index: 10; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); border-bottom: 1px solid #cbd5e1; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tbody tr:hover { background-color: #f8fafc; transition: all 0.2s; }
+        .table-zebra tbody tr:nth-child(even) { background-color: #fafbfc; }
+        
+        .table-container { max-height: 500px; overflow-y: auto; overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; position: relative; }
+        .table-container::-webkit-scrollbar { width: 6px; height: 6px; }
+        .table-container::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 8px; }
+        .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+        .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .heatmap-cell { font-weight: 700; text-align: center; border-radius: 4px; margin: 2px; padding: 6px; font-size: 0.95rem; }
+        .hm-red { background-color: #fee2e2; color: #991b1b; }
+        .hm-yellow { background-color: #fef3c7; color: #92400e; }
+        .hm-green { background-color: #d1fae5; color: #065f46; }
+
+        @media print {
+            body { background-color: white; color: black; padding: 0 !important; }
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #cbd5e1; page-break-inside: avoid; margin-bottom: 24px; padding: 20px; }
+            .table-container { max-height: none !important; overflow-y: visible !important; overflow-x: visible !important; border: none; }
+            th { position: static; box-shadow: none; border-bottom: 2px solid #cbd5e1; }
+            canvas { max-width: 100% !important; height: auto !important; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-slate-800">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="flex flex-col items-center justify-center mb-10 gap-4 text-center no-print">
+            <h1 class="text-4xl md:text-5xl font-black mb-1 tracking-tight font-artistic text-transparent bg-clip-text bg-gradient-to-r from-blue-900 via-blue-600 to-indigo-800 pb-2 drop-shadow-sm">
+                Dashboard Analisis Akademik nilai PTS 2<br> SMP ABBS Surakarta
+            </h1>
+            <p class="text-slate-500 font-medium text-xs md:text-sm uppercase tracking-widest bg-blue-50 px-5 py-2 rounded-full border border-blue-100 shadow-sm">
+                Laporan Statistik, Peringkat, EWS & Komparasi Rapor
+            </p>
+            
+            <div class="flex flex-wrap justify-center gap-3 mt-4 hidden" id="action-buttons">
+                <button onclick="loadDataFromGoogleSheets()" class="bg-blue-100 hover:bg-blue-200 text-blue-800 px-6 py-2.5 rounded-lg shadow-sm font-semibold transition flex items-center gap-2 text-sm border border-blue-300">
+                    🔄 Segarkan Data
+                </button>
+                <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg shadow-sm font-semibold transition flex items-center gap-2 text-sm">
+                    💾 Ekspor ke Excel
+                </button>
+                <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg shadow-sm font-semibold transition flex items-center gap-2 text-sm">
+                    🖨️ Cetak PDF
+                </button>
+            </div>
+        </header>
+
+        <div class="card border-2 border-dashed border-blue-300 bg-blue-50/50 text-center transition no-print group" id="upload-area">
+            <div class="text-blue-700 flex flex-col items-center justify-center w-full py-10">
+                <div onclick="loadDataFromGoogleSheets()" class="cursor-pointer w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 group-hover:scale-110 transition duration-300">
+                    <span class="text-3xl">🔄</span>
+                </div>
+                <span class="text-xl font-bold">Terhubung ke Database Google Sheets</span>
+                <span class="text-sm text-blue-500 mt-2">Sistem otomatis menarik dan memproses data analitik secara live</span>
+            </div>
+        </div>
+
+        <div id="loading" class="hidden text-center text-blue-600 font-semibold py-10 text-base"><div class="spinner mb-3"></div>Menarik Data Live & Memvalidasi Ribuan Data...</div>
+
+        <div id="dashboard-container" class="hidden">
+            
+            <div class="card bg-slate-900 text-white flex flex-col md:flex-row items-center justify-between gap-4 no-print border-none py-4 px-6 rounded-xl">
+                <div class="font-bold text-base flex items-center gap-2">
+                    <span>🎛️</span> Tampilan Data Berdasarkan:
+                </div>
+                <div class="w-full md:w-auto">
+                    <select id="filter-level" class="p-2.5 rounded-lg text-slate-900 font-bold w-full md:w-72 bg-white border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer text-sm">
+                        <option value="ALL">Seluruh Sekolah (Semua Data)</option>
+                        <option disabled>──────── Per Level ────────</option>
+                        <option value="L7">Level 7 Saja</option>
+                        <option value="L8">Level 8 Saja</option>
+                        <option value="L9">Level 9 Saja</option>
+                        <option disabled>──────── Per Kelas ────────</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card mb-0">
+                    <h2 class="text-xl font-bold mb-4 text-slate-800 flex items-center gap-2">📈 Statistik Pencapaian Nilai</h2>
+                    <div class="table-container shadow-sm border border-slate-200">
+                        <table id="table-stat" class="table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th class="text-left bg-slate-50">Mata Pelajaran</th>
+                                    <th class="text-center bg-blue-50 text-blue-800 border-b-blue-200">Rata-rata</th>
+                                    <th class="text-center bg-slate-50">Median</th>
+                                    <th class="text-center bg-slate-50">Max</th>
+                                    <th class="text-center bg-slate-50">Min</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stat-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card mb-0">
+                    <div class="mb-4">
+                        <h2 class="text-xl font-bold mb-1 text-slate-800 flex items-center gap-2">🎯 Persentase Ketuntasan</h2>
+                        <p class="text-xs text-slate-500 font-medium">Data dihitung berdasarkan pencapaian nilai siswa. KKM = 75.</p>
+                    </div>
+                    <div class="table-container shadow-sm border border-emerald-200">
+                        <table id="table-kkm" class="table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th class="text-left bg-emerald-50 text-emerald-800 border-b border-emerald-200">Mata Pelajaran</th>
+                                    <th class="text-center bg-emerald-50 text-emerald-800 border-b border-emerald-200">Tuntas</th>
+                                    <th class="text-center bg-emerald-50 text-emerald-800 border-b border-emerald-200">Remedial</th>
+                                    <th class="text-center bg-emerald-100 text-emerald-900 border-b border-emerald-300 font-bold">% Lulus</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ketuntasan-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-l-4 border-l-red-500 bg-red-50/20 mt-6">
+                <div class="mb-4">
+                    <h2 class="text-xl font-bold mb-1 text-red-700 flex items-center gap-2">🚨 Early Warning System (Siswa Perlu Perhatian)</h2>
+                    <p class="text-xs text-red-600 font-medium">Sistem mendeteksi siswa dengan nilai di bawah KKM pada ≥ 3 Mata Pelajaran</p>
+                </div>
+                <div class="table-container shadow-sm border border-red-200">
+                    <table id="table-ews" class="table-zebra bg-white w-full">
+                        <thead>
+                            <tr>
+                                <th class="text-left bg-red-50 text-red-800 border-b border-red-200">Nama Siswa</th>
+                                <th class="text-center bg-red-50 text-red-800 border-b border-red-200">Kelas</th>
+                                <th class="text-center bg-red-50 text-red-800 border-b border-red-200 w-32">Jml Remed</th>
+                                <th class="text-left bg-red-50 text-red-800 border-b border-red-200">Detail Mapel (< 75)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ews-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mt-6">
+                <div class="mb-4 flex flex-col md:flex-row justify-between md:items-end gap-2">
+                    <div>
+                        <h2 class="text-xl font-bold mb-1 text-slate-800 flex items-center gap-2">🗺️ Peta Performa (Heatmap) Rata-rata per Kelas</h2>
+                        <div class="flex gap-3 mt-2">
+                            <span class="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><div class="w-3 h-3 bg-red-100 border border-red-300 rounded"></div> Merah (< 75)</span>
+                            <span class="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><div class="w-3 h-3 bg-yellow-100 border border-yellow-300 rounded"></div> Kuning (75 - 84)</span>
+                            <span class="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><div class="w-3 h-3 bg-emerald-100 border border-emerald-300 rounded"></div> Hijau (≥ 85)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-container shadow-sm border border-slate-200">
+                    <table id="table-heatmap" class="w-full text-sm border-collapse">
+                        <thead>
+                            <tr id="heatmap-header">
+                                <th class="text-left sticky left-0 bg-slate-50 z-20 shadow-[1px_0_3px_0_rgba(0,0,0,0.1)] text-sm border-b border-slate-200">Kelas</th>
+                                </tr>
+                        </thead>
+                        <tbody id="heatmap-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+                <div class="card lg:col-span-2 mb-0">
+                    <h2 class="text-lg font-bold mb-4 text-slate-800 text-center">📊 Komparasi Rata-rata per Mata Pelajaran</h2>
+                    <div class="w-full max-w-3xl mx-auto"><canvas id="chart-compare" height="120"></canvas></div>
+                </div>
+                <div class="card mb-0 flex flex-col items-center justify-center bg-slate-50/50">
+                    <h2 class="text-lg font-bold mb-2 text-slate-800 text-center">🍩 Rasio Ketuntasan Global</h2>
+                    <p class="text-xs text-slate-500 mb-4 text-center">Berdasarkan data pencapaian nilai</p>
+                    <div class="w-full max-w-[220px] aspect-square relative"><canvas id="chart-doughnut"></canvas></div>
+                </div>
+            </div>
+
+            <div class="flex justify-center my-8 no-print">
+                <button id="toggle-rank-btn" class="bg-white hover:bg-slate-50 text-slate-600 px-6 py-2 rounded-full font-bold transition flex items-center gap-2 shadow-sm border border-slate-200 text-sm">
+                    👁️ Sembunyikan Area Klasemen Peringkat
+                </button>
+            </div>
+
+            <div id="ranking-container" class="flex flex-col gap-6 transition-all duration-300">
+                <div class="card mb-0">
+                    <h2 class="text-xl font-bold mb-1 text-slate-800 flex items-center gap-2" id="rank-title">🏆 Peringkat Siswa (Global)</h2>
+                    <p class="text-xs text-slate-500 mb-4 font-medium italic">Data diurutkan dari Rata-rata tertinggi. Scroll ke bawah untuk melihat seluruh siswa.</p>
+                    <div class="table-container shadow-sm border border-slate-200">
+                        <table id="table-rank" class="table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th class="text-center w-16 bg-blue-50 text-blue-800 border-b border-blue-200">Rank</th>
+                                    <th class="text-left bg-blue-50 text-blue-800 border-b border-blue-200">Nama Lengkap Siswa</th>
+                                    <th class="text-center w-24 bg-blue-50 text-blue-800 border-b border-blue-200">Kelas</th>
+                                    <th class="text-center w-36 bg-blue-100 text-blue-900 border-b border-blue-300 font-bold">Rata-rata</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rank-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card border-t-4 border-t-emerald-500 mb-0">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">🏅 Peringkat per Mapel</h2>
+                            <p class="text-xs text-slate-500 mt-1 font-medium italic">Pilih mata pelajaran di samping untuk melihat siapa yang terbaik.</p>
+                        </div>
+                        <select id="mapel-rank-filter" class="p-2 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-200 font-bold text-emerald-800 bg-emerald-50 cursor-pointer text-sm w-full md:w-56 shadow-sm">
+                        </select>
+                    </div>
+                    <div class="table-container shadow-sm border border-emerald-200">
+                        <table id="table-rank-mapel" class="table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th class="text-center w-16 bg-emerald-50 text-emerald-800 border-b border-emerald-200">Rank</th>
+                                    <th class="text-left bg-emerald-50 text-emerald-800 border-b border-emerald-200">Nama Lengkap Siswa</th>
+                                    <th class="text-center w-24 bg-emerald-50 text-emerald-800 border-b border-emerald-200">Kelas</th>
+                                    <th class="text-center w-36 bg-emerald-100 text-emerald-900 border-b border-emerald-300 font-bold" id="header-mapel-asli">Nilai Mapel</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rank-mapel-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-t-4 border-t-indigo-500 mt-10 mb-0">
+                <h2 class="text-2xl font-extrabold mb-6 text-slate-800 border-b border-slate-100 pb-2">👤 Pencarian Profil & Rapor Mini Siswa</h2>
+                
+                <div class="flex flex-col md:flex-row gap-6 mb-10 no-print bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner">
+                    <div class="w-full md:w-1/3">
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">1. Filter Kelas</label>
+                        <select id="st-class-dropdown" class="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white shadow-sm cursor-pointer">
+                            <option value="" disabled selected>-- Pilih Kelas --</option>
+                        </select>
+                    </div>
+                    <div class="w-full md:w-2/3">
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">2. Pilih Siswa</label>
+                        <select id="st-name-dropdown" class="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-slate-100 cursor-not-allowed text-slate-500" disabled>
+                            <option value="" disabled selected>-- Pilih Kelas Dahulu --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="student-result" class="hidden">
+                    
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <div>
+                            <h3 class="font-black text-2xl text-slate-800" id="st-name">Nama Siswa</h3>
+                            <div class="mt-1 flex gap-3 text-sm text-slate-500 font-medium">
+                                <p>Kelas <span id="st-class" class="font-bold text-indigo-600"></span></p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="text-right">
+                                <p class="text-xs font-bold text-amber-600 uppercase">Rata2 Asli</p>
+                                <p class="text-2xl font-black text-amber-500" id="st-avg-asli">0.0</p>
+                            </div>
+                            <div class="w-px h-10 bg-slate-200 self-center"></div>
+                            <div class="text-right">
+                                <p class="text-xs font-bold text-emerald-600 uppercase">Rata2 Akhir</p>
+                                <p class="text-2xl font-black text-emerald-500" id="st-avg-akhir">0.0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-6 p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded-r-lg text-sm shadow-sm">
+                        <h4 class="font-bold text-indigo-900 mb-1 flex items-center gap-2">🤖 Catatan Akademik AI (Basis Nilai Asli)</h4>
+                        <p class="text-slate-700 leading-relaxed" id="st-auto-narrative">-</p>
+                    </div>
+                    
+                    <div class="w-full mb-6">
+                        <h4 class="font-bold text-lg text-slate-800 mb-2">📄 Komparasi Nilai Asli vs Rata-rata</h4>
+                        <div class="table-container shadow-sm border border-slate-200 rounded-lg overflow-hidden">
+                            <table class="table-zebra w-full text-sm">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left bg-slate-100 text-slate-600 font-bold border-b border-slate-200 py-2.5">Mata Pelajaran</th>
+                                        <th class="text-center bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200 py-2.5 w-24">Nilai Asli</th>
+                                        <th class="text-center bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 py-2.5 w-24">Rata Kelas</th>
+                                        <th class="text-center bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 py-2.5 w-24">Rata Level</th>
+                                        <th class="text-center bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 py-2.5 w-24">Rata Total</th>
+                                        <th class="text-center bg-blue-50 text-blue-800 font-bold border-b border-blue-200 py-2.5 w-24">Nilai Akhir</th>
+                                        <th class="text-center bg-slate-100 text-slate-600 font-bold border-b border-slate-200 py-2.5 w-28">Status KKM</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="st-grades-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="mt-2 flex gap-4 text-xs font-medium text-slate-500 justify-end">
+                            <span class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-500"></div> Asli ≥ Rata Kelas</span>
+                            <span class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-rose-500"></div> Asli &lt; Rata Kelas</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row gap-5">
+                        <div class="w-full md:w-1/2 border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-center items-center">
+                            <h4 class="font-bold text-sm text-slate-500 uppercase tracking-wider mb-2">Grafik Asli vs Akhir</h4>
+                            <div class="w-full max-w-[280px]"><canvas id="chart-student"></canvas></div>
+                        </div>
+                        <div class="w-full md:w-1/2 p-5 bg-amber-50 border border-amber-200 rounded-xl shadow-sm flex flex-col justify-center">
+                            <h4 class="font-bold text-amber-900 mb-2 flex items-center gap-2 border-b border-amber-200 pb-2 text-sm uppercase tracking-wider">✍️ Catatan Wali Kelas (Dari Excel)</h4>
+                            <p class="text-slate-700 italic leading-relaxed text-sm" id="st-notes">-</p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- API URL GOOGLE SHEETS ANDA ---
+        const API_URL = "https://script.google.com/macros/s/AKfycbzkBM9u-qjQGdrvPEsGMAn-rlrdeRaIVGOdWIN1yqCRH60z4jDaCgC6B9UXbBAZsflHVg/exec";
+
+        function formatNumber(num) {
+            if (num === null || num === undefined || isNaN(num)) return '-';
+            return parseFloat(Number(num).toFixed(2)); 
+        }
+
+        const dashboard = document.getElementById('dashboard-container');
+        const loading = document.getElementById('loading');
+        const actionButtons = document.getElementById('action-buttons');
+        const uploadArea = document.getElementById('upload-area');
+        const filterSelect = document.getElementById('filter-level');
+        const stClassDropdown = document.getElementById('st-class-dropdown');
+        const stNameDropdown = document.getElementById('st-name-dropdown');
+        const mapelRankFilter = document.getElementById('mapel-rank-filter');
+        
+        let allStudents = [];
+        let currentFilteredData = [];
+        let uniqueClasses = [];
+        let chartCompare, chartStudent, chartDoughnut;
+        const KKM = 75;
+
+        const mapelList = ['IFE', 'CIVIC', 'INDO', 'ENGLISH', 'MATH', 'SCIENCE', 'SOCIAL', 'ICT', 'SPORT', "QUR'AN"];
+
+        const heatmapHeader = document.getElementById('heatmap-header');
+        mapelList.forEach(m => {
+            let opt = document.createElement('option'); opt.value = m; opt.innerText = `Mapel: ${m}`;
+            mapelRankFilter.appendChild(opt);
+            heatmapHeader.innerHTML += `<th class="text-center min-w-[50px] p-2 bg-slate-50 border-b border-slate-200">${m.substring(0,3)}</th>`;
+        });
+
+        function cleanNumber(val) {
+            if (!val || val === '-') return null;
+            if (typeof val === 'number') return val;
+            let num = parseFloat(val.toString().replace(',', '.').trim());
+            return isNaN(num) ? null : num;
+        }
+
+        function getMean(arr) { return arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length) : 0; }
+        function getMedian(arr) {
+            if (!arr.length) return 0; arr.sort((a, b) => a - b);
+            const mid = Math.floor(arr.length / 2);
+            return arr.length % 2 !== 0 ? arr[mid] : ((arr[mid - 1] + arr[mid]) / 2);
+        }
+
+        document.getElementById('toggle-rank-btn').addEventListener('click', function() {
+            const container = document.getElementById('ranking-container');
+            container.classList.toggle('hidden');
+            this.innerHTML = container.classList.contains('hidden') ? '👁️ Tampilkan Area Klasemen Peringkat' : '👁️ Sembunyikan Area Klasemen Peringkat';
+        });
+
+        // FUNGSI TARIK DATA LIVE DARI API GOOGLE SHEETS
+        function loadDataFromGoogleSheets() {
+            uploadArea.classList.add('hidden');
+            loading.classList.remove('hidden'); 
+            dashboard.classList.add('hidden'); 
+            actionButtons.classList.add('hidden');
+            
+            allStudents = []; 
+            uniqueClasses = new Set();
+
+            fetch(API_URL)
+                .then(response => response.json())
+                .then(json => {
+                    if(json.status === "success") {
+                        let jsonData = json.data;
+
+                        jsonData.forEach(row => {
+                            if (row.Nama && row.Nama.toString().trim() !== '' && row.Nama.toString().toLowerCase() !== 'jumlah') {
+                                let className = row.Kelas ? row.Kelas.toString().toUpperCase() : "Unknown";
+                                uniqueClasses.add(className);
+                                
+                                let student = { 
+                                    Nama: row.Nama, 
+                                    Kelas: className, 
+                                    RataRataAsli: 0, 
+                                    RataRataAkhir: 0, 
+                                    Catatan: row['Student Notes'] || 'Tidak ada catatan.',
+                                    NilaiAsli: {}, 
+                                    NilaiAkhir: {} 
+                                };
+                                
+                                let totalAsli = 0, countAsli = 0;
+                                let totalAkhir = 0, countAkhir = 0;
+                                
+                                mapelList.forEach(m => {
+                                    let nAsli = cleanNumber(row[`${m} NILAI ASLI`]);
+                                    let nAkhir = cleanNumber(row[`${m} NILAI AKHIR`]);
+                                    student.NilaiAsli[m] = nAsli;
+                                    student.NilaiAkhir[m] = nAkhir;
+                                    
+                                    if (nAsli !== null) { totalAsli += nAsli; countAsli++; }
+                                    if (nAkhir !== null) { totalAkhir += nAkhir; countAkhir++; }
+                                });
+                                
+                                student.RataRataAsli = countAsli > 0 ? (totalAsli / countAsli) : 0;
+                                student.RataRataAkhir = countAkhir > 0 ? (totalAkhir / countAkhir) : 0;
+                                
+                                allStudents.push(student);
+                            }
+                        });
+
+                        let classArray = Array.from(uniqueClasses).sort();
+                        
+                        document.querySelectorAll('#filter-level option[data-class]').forEach(el => el.remove());
+                        classArray.forEach(c => {
+                            let opt = document.createElement('option');
+                            opt.value = c; opt.innerText = `Kelas ${c}`; opt.setAttribute('data-class', 'true');
+                            filterSelect.appendChild(opt);
+                        });
+
+                        stClassDropdown.innerHTML = `<option value="" disabled selected>-- Pilih Kelas --</option>`;
+                        classArray.forEach(c => { stClassDropdown.innerHTML += `<option value="${c}">Kelas ${c}</option>`; });
+
+                        loading.classList.add('hidden');
+                        dashboard.classList.remove('hidden');
+                        actionButtons.classList.remove('hidden');
+                        
+                        updateDashboard('ALL');
+                    } else {
+                        alert("Gagal memuat data dari API: " + json.message);
+                        loading.classList.add('hidden');
+                        uploadArea.classList.remove('hidden');
+                        uploadArea.innerHTML = `<div class="py-10 text-red-600 font-bold text-center w-full">Gagal memuat data: ${json.message}<br><button onclick="loadDataFromGoogleSheets()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">Coba Lagi</button></div>`;
+                    }
+                })
+                .catch(error => {
+                    console.error("Fetch error:", error);
+                    alert("Koneksi bermasalah. Pastikan internet stabil.");
+                    loading.classList.add('hidden');
+                    uploadArea.classList.remove('hidden');
+                    uploadArea.innerHTML = `<div class="py-10 text-red-600 font-bold text-center w-full">Gagal terhubung ke server.<br><button onclick="loadDataFromGoogleSheets()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">Coba Lagi</button></div>`;
+                });
+        }
+
+        filterSelect.addEventListener('change', (e) => updateDashboard(e.target.value));
+        mapelRankFilter.addEventListener('change', updateMapelRanking);
+
+        function updateMapelRanking() {
+            const selectedMapel = mapelRankFilter.value;
+            const rankMapelBody = document.getElementById('rank-mapel-body');
+            document.getElementById('header-mapel-asli').innerText = `Nilai (${selectedMapel})`;
+            rankMapelBody.innerHTML = '';
+
+            let rankedMapelStudents = [...currentFilteredData]
+                .filter(s => s.NilaiAsli[selectedMapel] !== null)
+                .sort((a, b) => b.NilaiAsli[selectedMapel] - a.NilaiAsli[selectedMapel]);
+
+            if(rankedMapelStudents.length === 0) {
+                rankMapelBody.innerHTML = `<tr><td colspan="4" class="text-center italic text-slate-500 py-4">Data tidak tersedia</td></tr>`; return;
+            }
+
+            rankedMapelStudents.forEach((s, index) => {
+                let badge = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `<span class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-bold">${index + 1}</span>`;
+                rankMapelBody.innerHTML += `<tr><td class="text-center font-bold">${badge}</td><td class="font-semibold text-slate-800">${s.Nama}</td><td class="text-center text-sm text-slate-500">${s.Kelas}</td><td class="text-center font-black text-emerald-700 bg-emerald-50/50 border-x border-emerald-100">${formatNumber(s.NilaiAsli[selectedMapel])}</td></tr>`;
+            });
+        }
+
+        function updateDashboard(filterVal) {
+            currentFilteredData = allStudents;
+            let rankTitleText = "🏆 Peringkat Siswa (Global)";
+            let availableClasses = Array.from(uniqueClasses).sort();
+
+            if (filterVal === 'L7') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('7')); availableClasses = availableClasses.filter(c => c.startsWith('7')); rankTitleText = "🏆 Peringkat Siswa (Level 7)"; }
+            else if (filterVal === 'L8') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('8')); availableClasses = availableClasses.filter(c => c.startsWith('8')); rankTitleText = "🏆 Peringkat Siswa (Level 8)"; }
+            else if (filterVal === 'L9') { currentFilteredData = allStudents.filter(s => s.Kelas.startsWith('9')); availableClasses = availableClasses.filter(c => c.startsWith('9')); rankTitleText = "🏆 Peringkat Siswa (Level 9)"; }
+            else if (filterVal !== 'ALL') { currentFilteredData = allStudents.filter(s => s.Kelas === filterVal); availableClasses = [filterVal]; rankTitleText = `🏆 Peringkat Siswa (Kelas ${filterVal})`; }
+
+            const statBody = document.getElementById('stat-body');
+            const kkmBody = document.getElementById('ketuntasan-body');
+            const rankBody = document.getElementById('rank-body');
+            const ewsBody = document.getElementById('ews-body');
+            const heatmapBody = document.getElementById('heatmap-body');
+            
+            document.getElementById('rank-title').innerText = rankTitleText;
+            statBody.innerHTML = ''; kkmBody.innerHTML = ''; rankBody.innerHTML = ''; ewsBody.innerHTML = ''; heatmapBody.innerHTML = '';
+
+            let chartDataAsli = [];
+            let globalTuntas = 0, globalRemedial = 0;
+
+            mapelList.forEach(m => {
+                let nilaiAsliArr = [], tuntas = 0, belumTuntas = 0, totalValidAsli = 0;
+                
+                currentFilteredData.forEach(s => {
+                    if (s.NilaiAsli[m] !== null) {
+                        nilaiAsliArr.push(s.NilaiAsli[m]);
+                        totalValidAsli++;
+                        if (s.NilaiAsli[m] >= KKM) tuntas++; else belumTuntas++;
+                    }
+                });
+
+                globalTuntas += tuntas; globalRemedial += belumTuntas;
+                let max = nilaiAsliArr.length ? Math.max(...nilaiAsliArr) : 0;
+                let min = nilaiAsliArr.length ? Math.min(...nilaiAsliArr) : 0;
+                let mean = getMean(nilaiAsliArr);
+                
+                statBody.innerHTML += `<tr><td class="font-semibold text-slate-800">${m}</td><td class="text-center font-bold text-blue-700 bg-blue-50/50">${formatNumber(mean)}</td><td class="text-center text-sm">${formatNumber(getMedian(nilaiAsliArr))}</td><td class="text-center text-emerald-600 font-bold">${formatNumber(max)}</td><td class="text-center text-red-500 font-bold">${formatNumber(min)}</td></tr>`;
+
+                let persentase = totalValidAsli > 0 ? (tuntas / totalValidAsli) * 100 : 0;
+                let colorClass = persentase >= 75 ? 'text-emerald-600' : 'text-amber-600';
+                kkmBody.innerHTML += `<tr><td class="font-semibold text-slate-800">${m}</td><td class="text-center font-bold text-sm text-emerald-700">${tuntas}</td><td class="text-center font-bold text-sm text-rose-600">${belumTuntas}</td><td class="text-center font-black ${colorClass} bg-emerald-50/30">${formatNumber(persentase)}%</td></tr>`;
+                chartDataAsli.push(formatNumber(mean));
+            });
+
+            // EWS
+            let ewsCount = 0;
+            currentFilteredData.forEach(s => {
+                let remedSubjects = [];
+                mapelList.forEach(m => {
+                    if(s.NilaiAsli[m] !== null && s.NilaiAsli[m] < KKM) remedSubjects.push(`${m} (${s.NilaiAsli[m]})`);
+                });
+                if(remedSubjects.length >= 3) {
+                    ewsCount++;
+                    ewsBody.innerHTML += `<tr><td class="font-bold text-slate-900">${s.Nama}</td><td class="text-center font-semibold text-slate-600 text-sm">${s.Kelas}</td><td class="text-center font-black text-red-600 text-base border-x border-red-100 bg-red-50/50">${remedSubjects.length}</td><td class="text-xs text-red-700 font-medium">${remedSubjects.join(', ')}</td></tr>`;
+                }
+            });
+            if(ewsCount === 0) ewsBody.innerHTML = `<tr><td colspan="4" class="text-center font-bold text-emerald-600 py-4 text-sm">Alhamdulillah, tidak ada siswa dengan nilai sangat berisiko dalam filter ini.</td></tr>`;
+
+            // Heatmap
+            availableClasses.forEach(c => {
+                let studentsInC = allStudents.filter(s => s.Kelas === c);
+                let rowHtml = `<tr><td class="sticky left-0 bg-slate-50 font-bold text-slate-800 border-r border-b border-slate-200 shadow-[1px_0_2px_-1px_rgba(0,0,0,0.1)] p-2 z-10 text-sm">${c}</td>`;
+                
+                mapelList.forEach(m => {
+                    let total = 0, count = 0;
+                    studentsInC.forEach(s => { if(s.NilaiAsli[m] !== null) { total += s.NilaiAsli[m]; count++; } });
+                    let avg = count > 0 ? (total/count) : 0;
+                    
+                    let bgClass = avg === 0 ? 'bg-slate-100 text-slate-400' : (avg < 75 ? 'hm-red' : (avg < 85 ? 'hm-yellow' : 'hm-green'));
+                    rowHtml += `<td class="p-1 border-b border-slate-100"><div class="heatmap-cell ${bgClass} py-1 shadow-sm text-xs">${formatNumber(avg)}</div></td>`;
+                });
+                rowHtml += `</tr>`;
+                heatmapBody.innerHTML += rowHtml;
+            });
+
+            // Peringkat
+            let rankedStudents = [...currentFilteredData].sort((a, b) => b.RataRataAsli - a.RataRataAsli);
+            rankedStudents.forEach((s, index) => {
+                let badge = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `<span class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-bold">${index + 1}</span>`;
+                rankBody.innerHTML += `<tr><td class="text-center font-bold">${badge}</td><td class="font-semibold text-slate-800">${s.Nama}</td><td class="text-center text-sm text-slate-500">${s.Kelas}</td><td class="text-center font-black text-blue-700 bg-blue-50/30 border-x border-blue-100">${formatNumber(s.RataRataAsli)}</td></tr>`;
+            });
+
+            updateMapelRanking();
+
+            // Chart
+            if(chartCompare) chartCompare.destroy();
+            chartCompare = new Chart(document.getElementById('chart-compare'), {
+                type: 'bar', data: { labels: mapelList, datasets: [{ label: `Rata-rata`, data: chartDataAsli, backgroundColor: '#3b82f6', borderRadius: 4, barPercentage: 0.6 }] },
+                options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return ' Rata-rata: ' + context.raw; } } } }, scales: { y: { min: 60, max: 100, grid: { color: '#f1f5f9' } }, x: { grid: { display: false }, ticks: { font: { size: 10 } } } } }
+            });
+
+            let totalSiswaGrafik = globalTuntas + globalRemedial;
+            let pctTuntas = totalSiswaGrafik ? ((globalTuntas / totalSiswaGrafik) * 100).toFixed(1) : 0;
+            let pctRemedial = totalSiswaGrafik ? ((globalRemedial / totalSiswaGrafik) * 100).toFixed(1) : 0;
+
+            if(chartDoughnut) chartDoughnut.destroy();
+            chartDoughnut = new Chart(document.getElementById('chart-doughnut'), {
+                type: 'doughnut',
+                data: { labels: [`Tuntas (${pctTuntas}%)`, `Remedial (${pctRemedial}%)`], datasets: [{ data: [globalTuntas, globalRemedial], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 3, borderColor: '#fff' }] },
+                options: { plugins: { legend: { position: 'bottom', labels: { font: { weight: 'bold', size: 11 }, padding: 10 } } }, cutout: '65%' }
+            });
+        }
+
+        function exportToExcel() {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-stat')), "Analisis_Statistik");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-kkm')), "Persentase_KKM");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-ews')), "Warning_Siswa");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-heatmap')), "Heatmap_Kelas");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-rank')), "Peringkat_Siswa");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('table-rank-mapel')), `Peringkat_Mapel_${mapelRankFilter.value}`);
+            XLSX.writeFile(wb, `Rekap_Dashboard_STS2_${filterSelect.value}.xlsx`);
+        }
+
+        stClassDropdown.addEventListener('change', function(e) {
+            const selectedClass = e.target.value;
+            stNameDropdown.disabled = false; 
+            stNameDropdown.classList.remove('bg-slate-100', 'cursor-not-allowed', 'text-slate-500');
+            stNameDropdown.classList.add('bg-white', 'cursor-pointer', 'text-slate-900');
+            stNameDropdown.innerHTML = `<option value="" disabled selected>-- Pilih Nama Siswa --</option>`;
+            document.getElementById('student-result').classList.add('hidden');
+
+            let studentsInClass = allStudents.filter(s => s.Kelas === selectedClass).sort((a, b) => a.Nama.localeCompare(b.Nama));
+            studentsInClass.forEach(s => { let opt = document.createElement('option'); opt.value = s.Nama; opt.innerText = s.Nama; stNameDropdown.appendChild(opt); });
+        });
+
+        stNameDropdown.addEventListener('change', function(e) {
+            const selectedName = e.target.value;
+            let student = allStudents.find(s => s.Nama === selectedName);
+            
+            if(student) {
+                document.getElementById('student-result').classList.remove('hidden');
+                document.getElementById('st-name').innerText = student.Nama;
+                document.getElementById('st-class').innerText = student.Kelas;
+                document.getElementById('st-avg-asli').innerText = formatNumber(student.RataRataAsli);
+                document.getElementById('st-avg-akhir').innerText = formatNumber(student.RataRataAkhir);
+                document.getElementById('st-notes').innerText = `"${student.Catatan}"`;
+
+                let studentClass = student.Kelas;
+                let studentLevel = studentClass.charAt(0);
+                
+                let classStudents = allStudents.filter(s => s.Kelas === studentClass);
+                let levelStudents = allStudents.filter(s => s.Kelas.startsWith(studentLevel));
+
+                let dAsli = [], dAkhir = [];
+                let validMapels = mapelList.filter(m => student.NilaiAsli[m] !== null);
+                let sortedByAsli = validMapels.sort((a, b) => student.NilaiAsli[b] - student.NilaiAsli[a]);
+                
+                let narrative = "";
+                if(sortedByAsli.length > 0) {
+                    let top2 = sortedByAsli.slice(0, 2).map(m => `<b class="text-indigo-700">${m} (${formatNumber(student.NilaiAsli[m])})</b>`);
+                    let remedMapels = sortedByAsli.filter(m => student.NilaiAsli[m] < KKM).map(m => `<b class="text-rose-600">${m} (${formatNumber(student.NilaiAsli[m])})</b>`);
+                    
+                    narrative = `Berdasarkan Nilai Asli (sebelum remedial), <b>${student.Nama}</b> menunjukkan keunggulan yang menonjol di ${top2.join(' dan ')}. `;
+                    if(remedMapels.length > 0) {
+                        narrative += `Namun, masih perlu pendampingan belajar ekstra agar mencapai batas ketuntasan pada mata pelajaran: ${remedMapels.join(', ')}.`;
+                    } else {
+                        narrative += `Hebatnya, Ananda telah berhasil lulus murni pada <b class="text-emerald-700">seluruh mata pelajaran</b>.`;
+                    }
+                }
+                document.getElementById('st-auto-narrative').innerHTML = narrative;
+
+                const gradesBody = document.getElementById('st-grades-body');
+                gradesBody.innerHTML = '';
+
+                mapelList.forEach(m => {
+                    let asli = student.NilaiAsli[m] !== null ? student.NilaiAsli[m] : 0;
+                    let akhir = student.NilaiAkhir[m] !== null ? student.NilaiAkhir[m] : 0;
+                    dAsli.push(asli); dAkhir.push(akhir);
+
+                    let sumC=0, countC=0; classStudents.forEach(s=>{if(s.NilaiAsli[m]!==null && !isNaN(s.NilaiAsli[m])){sumC+=s.NilaiAsli[m]; countC++;}});
+                    let avgC = countC>0 ? sumC/countC : 0;
+
+                    let sumL=0, countL=0; levelStudents.forEach(s=>{if(s.NilaiAsli[m]!==null && !isNaN(s.NilaiAsli[m])){sumL+=s.NilaiAsli[m]; countL++;}});
+                    let avgL = countL>0 ? sumL/countL : 0;
+
+                    let sumT=0, countT=0; allStudents.forEach(s=>{if(s.NilaiAsli[m]!==null && !isNaN(s.NilaiAsli[m])){sumT+=s.NilaiAsli[m]; countT++;}});
+                    let avgT = countT>0 ? sumT/countT : 0;
+
+                    let isAboveClass = asli >= avgC;
+                    let asliColor = isAboveClass ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold';
+
+                    let status = asli >= KKM 
+                        ? `<span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded text-xs font-bold border border-emerald-200">LULUS</span>` 
+                        : `<span class="bg-red-100 text-red-800 px-3 py-1 rounded text-xs font-bold border border-red-200">REMEDIAL</span>`;
+
+                    gradesBody.innerHTML += `
+                        <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                            <td class="font-semibold text-slate-700 py-2.5 px-3">${m}</td>
+                            <td class="text-center text-sm py-2.5 px-3 ${asliColor}">${formatNumber(asli)}</td>
+                            <td class="text-center text-xs text-slate-500 py-2.5 px-3">${formatNumber(avgC)}</td>
+                            <td class="text-center text-xs text-slate-500 py-2.5 px-3">${formatNumber(avgL)}</td>
+                            <td class="text-center text-xs text-slate-500 py-2.5 px-3">${formatNumber(avgT)}</td>
+                            <td class="text-center font-black text-blue-700 text-sm bg-blue-50/50 border-x border-blue-100 py-2.5 px-3">${formatNumber(akhir)}</td>
+                            <td class="text-center py-2.5 px-3">${status}</td>
+                        </tr>`;
+                });
+
+                if(chartStudent) chartStudent.destroy();
+                chartStudent = new Chart(document.getElementById('chart-student'), {
+                    type: 'radar',
+                    data: {
+                        labels: mapelList,
+                        datasets: [
+                            { label: 'Nilai Asli', data: dAsli, borderColor: '#f43f5e', backgroundColor: 'rgba(244, 63, 94, 0.2)', borderWidth: 2, pointBackgroundColor: '#f43f5e', pointRadius: 3 },
+                            { label: 'Nilai Akhir', data: dAkhir, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', borderWidth: 2, pointBackgroundColor: '#3b82f6', pointRadius: 3 }
+                        ]
+                    },
+                    options: { scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent', font: {size: 9} }, pointLabels: { font: {size: 10} } } }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: {size: 11} } } } }
+                });
+            }
+        });
+
+        // Trigger loading otomatis
+        window.onload = function() {
+            loadDataFromGoogleSheets();
+        };
+    </script>
+</body>
+</html>
